@@ -50,6 +50,8 @@ import aliyunsdkcore.utils.validation
 from aliyunsdkcore.vendored.requests.structures import CaseInsensitiveDict
 from aliyunsdkcore.vendored.requests.structures import OrderedDict
 
+from aliyunsdkcore.auth.credentials import DefaultCredentialsProvider
+from aliyunsdkcore.acs_exception.exceptions import ClientException
 
 """
 Acs default client module.
@@ -80,7 +82,12 @@ class AcsClient:
             private_key=None,
             session_period=3600,
             credential=None,
-            debug=False):
+            debug=False,
+            access_key_id=None,
+            access_key_secret=None,
+            profile_name=None,
+            credentials_provider_chain=None
+    ):
         """
         constructor for AcsClient
         :param ak: String, access key id
@@ -93,23 +100,18 @@ class AcsClient:
 
         self._max_retry_num = max_retry_time
         self._auto_retry = auto_retry
-        self._ak = ak
-        self._secret = secret
+        self._ak = access_key_id or ak
+        self._secret = access_key_secret or secret
         self._region_id = region_id
         self._user_agent = user_agent
         self._port = port
         self._timeout = timeout
+        self.debug = debug
         self._extra_user_agent = {}
-        credential = {
-            'ak': ak,
-            'secret': secret,
-            'public_key_id': public_key_id,
-            'private_key': private_key,
-            'session_period': session_period,
-            'credential': credential,
-        }
-        self._signer = SignerFactory.get_signer(
-            credential, region_id, self._implementation_of_do_action, debug)
+        self.profile_name = profile_name
+        self.credentials_provider_chain = credentials_provider_chain
+        self.credentials = None
+
         self._endpoint_resolver = DefaultEndpointResolver(self)
 
         if self._auto_retry:
@@ -117,6 +119,34 @@ class AcsClient:
                 max_retry_times=self._max_retry_num)
         else:
             self._retry_policy = retry_policy.NO_RETRY_POLICY
+
+        _credential = {
+            'access_key_id': self._ak,
+            'access_key_secret': self._secret,
+            'public_key_id': public_key_id,  # rsa
+            'private_key': private_key,  # rsa
+            'session_period': session_period,  # rsa
+            'credential': credential,
+            'profile_name': profile_name
+        }
+
+        self._signer = self.get_signer_cls(_credential)
+
+    def get_signer_cls(self, _credential):
+        # using CredentialsProvider
+        if self.credentials_provider_chain:
+            self.credentials = self.credentials_provider_chain()
+        else:
+            _credentials_provider = DefaultCredentialsProvider(_credential)
+            self.credentials = _credentials_provider.load_credentials()
+        if self.credentials is None:
+            raise ClientException(
+                'NoCredentialsError',
+                'Unable to locate credentials'
+            )
+        return SignerFactory.get_signer(
+            credentials=self.credentials, region_id=self._region_id,
+            do_action_api=self._implementation_of_do_action, debug=self.debug)
 
     def get_region_id(self):
         return self._region_id

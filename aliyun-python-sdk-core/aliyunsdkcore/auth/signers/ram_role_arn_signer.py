@@ -41,7 +41,7 @@ class RamRoleArnSigner(Signer):
     _RETRY_DELAY_FAST = 3
     _PRIORITY = 1
 
-    def __init__(self, credential, do_action_api):
+    def __init__(self, credential, region_id=None, do_action_api=None, debug=None):
         if isinstance(credential, RamRoleArnCredential):
             self._credential = credential
             self._doAction = do_action_api
